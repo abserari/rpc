@@ -1,18 +1,9 @@
 package rpc
 
-type ServerCodec interface {
-	ReadRequestHeader(*Request) error
-	ReadRequestBody(interface{}) error
-	// WriteResponse must be sage for concurrent use by multiple goroutines.
-	WriteResponse(*Response) error
-
-	Close() error
-}
-
-type ClientCodec interface {
-	WriteRequest(*Request, interface{}) error
-	ReadResponseHeader(*Response) error
-	ReadResponseBody(interface{}) error
-
-	Close() error
+// baseCodec contains the functionality of both Codec and encoding.Codec, but
+// omits the name/string, which vary between the two and are not needed for
+// anything besides the registry in the encoding package.
+type baseCodec interface {
+	Marshal(v interface{}) ([]byte, error)
+	Unmarshal(data []byte, v interface{}) error
 }
