@@ -1,15 +1,18 @@
 package rpc
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
 //Server  mean instance to call service and listen&serve Request
 type Server struct {
-	Codec   baseCodec
-	CallMap sync.Map //map[string]*Call sync.Map's Load and LoadOrStore method for Register and Read Method
+	codec   baseCodec
+	callMap sync.Map //map[string]*Call sync.Map's Load and LoadOrStore method for Register and Read Method
 }
 
-//Call represent RPC service
-type Call struct {
+//Service represent RPC service, and method for call
+type Service struct {
 	name string
 }
 
@@ -21,14 +24,19 @@ type Request struct {
 type Reply struct {
 }
 
+//Endpoint represent RPC Call Chain
+type Endpoint func(ctx context.Context, request interface{}) (response interface{}, err error)
+
 // NewServerWithCodec return custom codec server
 func NewServerWithCodec(codec baseCodec) *Server {
 	return &Server{
-		Codec: codec,
+		codec: codec,
 	}
 }
 
 // Register registe a Call
-func (server *Server) Register(call *Call) {
-	server.CallMap.LoadOrStore(call.name, *Call)
+func (s *Server) Register(service *Service) {
+	s.callMap.LoadOrStore(service.name, service)
 }
+
+func (s *Server) Invoke() error {}
