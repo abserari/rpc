@@ -26,7 +26,7 @@ type Server struct {
 //NewServer Create a server with given ServerOption
 func NewServer(opts ...ServerOption) *Server {
 	s := &Server{
-		opts: defaultDialOptions(),
+		opts: defaultServerOptions(),
 	}
 	for _, opt := range opts {
 		opt.apply(&s.opts)

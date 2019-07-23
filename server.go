@@ -137,6 +137,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -187,6 +188,7 @@ type Response struct {
 
 // Server represents an RPC Server.
 type Server struct {
+	opts  serverOptions
 	serviceMap sync.Map   // map[string]*service
 	reqLock    sync.Mutex // protects freeReq
 	freeReq    *Request
@@ -194,9 +196,63 @@ type Server struct {
 	freeResp   *Response
 }
 
+//ServerOptions to configure Server
+type serverOptions struct {
+	codec ServerCodec
+	timeout time.Duration
+}
+
+// ServerOption sets options such as credentials, codec and keepalive parameters, etc.
+type ServerOption interface {
+	apply(*serverOptions)
+}
+
+// EmptyServerOption does not alter the server configuration. It can be embedded
+// in another structure to build custom server options.
+//
+// This API is EXPERIMENTAL.
+type EmptyServerOption struct{}
+
+func (EmptyServerOption) apply(*serverOptions) {}
+
+// funcServerOption wraps a function that modifies serverOptions into an
+// implementation of the ServerOption interface.
+type funcServerOption struct {
+	f func(*serverOptions)
+}
+
+func (fdo *funcServerOption) apply(do *serverOptions) {
+	fdo.f(do)
+}
+func defaultServerOptions() serverOptions {
+	return serverOptions{
+		timeout: time.Second,
+	}
+}
+
+func newFuncServerOption(f func(*serverOptions)) *funcServerOption {
+	return &funcServerOption{
+		f: f,
+	}
+}
+
+// func to set options
+func SetTimeout(delay time.Duration) ServerOption{
+	return newFuncServerOption(func(o *serverOptions){
+		o.timeout = delay
+	})
+}
 // NewServer returns a new Server.
-func NewServer() *Server {
-	return &Server{}
+func NewServer(opts ...ServerOption) *Server {
+	s := &Server{
+		opts:defaultServerOptions(),
+	}
+
+	for _ , opt := range opts {
+		opt.apply(&s.opts)
+	}
+
+	return s
 }
 
 // DefaultServer is the default instance of *Server.

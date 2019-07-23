@@ -1,4 +1,4 @@
-package rpc 
+package rpc
 
 import (
 	"context"
@@ -95,28 +95,16 @@ func DialContext(ctx context.Context, addr string, opts ...DialOption) (c *Clien
 
 	return c, nil
 }
+func (client *Client) send(ctx context.Context,call *Call){
 
-// Go invokes the function asynchronously. It returns the Call structure representing
+}
+	// Go invokes the function asynchronously. It returns the Call structure representing
 // the invocation. The done channel will signal when the call is complete by returning
 // the same Call object. If done is nil, Go will allocate a new channel.
 // If non-nil, done must be buffered or Go will deliberately crash.
 func (client *Client) Go(ctx context.Context, servicePath, serviceMethod string, args interface{}, reply interface{}, done chan *Call) *Call {
 	call := new(Call)
-	call.ServicePath = servicePath
 	call.ServiceMethod = serviceMethod
-	meta := ctx.Value(share.ReqMetaDataKey)
-	if meta != nil { //copy meta in context to meta in requests
-		call.Metadata = meta.(map[string]string)
-	}
-
-	if _, ok := ctx.(*share.Context); !ok {
-		ctx = share.NewContext(ctx)
-	}
-
-	// TODO: should implement as plugin
-	client.injectOpenTracingSpan(ctx, call)
-	client.injectOpenCensusSpan(ctx, call)
-
 	call.Args = args
 	call.Reply = reply
 	if done == nil {
@@ -136,32 +124,14 @@ func (client *Client) Go(ctx context.Context, servicePath, serviceMethod string,
 }
 
 func (client *Client) Call(ctx context.Context, servicePath, serviceMethod string, args interface{}, reply interface{}) error {
-	seq := new(uint64)
-	ctx = context.WithValue(ctx, seqKey{}, seq)
 	Done := client.Go(ctx, servicePath, serviceMethod, args, reply, make(chan *Call, 1)).Done
 
 	var err error
 	select {
 	case <-ctx.Done(): //cancel by context
-		client.mutex.Lock()
-		call := client.pending[*seq]
-		delete(client.pending, *seq)
-		client.mutex.Unlock()
-		if call != nil {
-			call.Error = ctx.Err()
-			call.done()
-		}
-
 		return ctx.Err()
 	case call := <-Done:
 		err = call.Error
-		meta := ctx.Value(share.ResMetaDataKey)
-		if meta != nil && len(call.ResMetadata) > 0 {
-			resMeta := meta.(map[string]string)
-			for k, v := range call.ResMetadata {
-				resMeta[k] = v
-			}
-		}
 	}
 
 	return err
@@ -170,12 +140,8 @@ func (client *Client) Call(ctx context.Context, servicePath, serviceMethod strin
 // Close calls the underlying codec's Close method. If the connection is already
 // shutting down, ErrShutdown is returned.
 func (client *Client) Close() error {
-	client.mutex.Lock()
-	if client.closing {
-		client.mutex.Unlock()
-		return ErrShutdown
-	}
-	client.closing = true
-	client.mutex.Unlock()
-	return client.codec.Close()
+	client.mu.Lock()
+	err := client.conn.Close()
+	client.mu.Unlock()
+	return err
 }

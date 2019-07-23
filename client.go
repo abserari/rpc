@@ -6,13 +6,16 @@ package rpc
 
 import (
 	"bufio"
+	"context"
 	"encoding/gob"
 	"errors"
+	"github.com/yhyddr/rpc/rpc"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"sync"
+	"time"
 )
 
 // ServerError represents an error that has been returned from
@@ -24,7 +27,6 @@ func (e ServerError) Error() string {
 }
 
 var ErrShutdown = errors.New("connection is shut down")
-
 // Call represents an active RPC.
 type Call struct {
 	ServiceMethod string      // The name of the service and method to call.
@@ -34,11 +36,43 @@ type Call struct {
 	Done          chan *Call  // Strobes when call is complete.
 }
 
+type clientOptions struct{
+	codec ClientCodec
+	timeout time.Duration
+}
+
+type ClientOption interface{
+	apply(*clientOptions)
+}
+
+type funcClientOption struct {
+	f func( *clientOptions)
+}
+
+func (fdo *funcClientOption) apply(do *clientOptions) {
+	fdo.f(do)
+}
+
+func newFuncClientOption(f func( *clientOptions)) *funcClientOption {
+	return &funcClientOption{
+		f: f,
+	}
+}
+func defaultClientOptions() clientOptions {
+	return clientOptions{
+		timeout: time.Second * 3,
+	}
+}
+
 // Client represents an RPC Client.
 // There may be multiple outstanding Calls associated
 // with a single Client, and a Client may be used by
 // multiple goroutines simultaneously.
 type Client struct {
+	ctx context.Context
+	cancel context.CancelFunc
+
+	opts clientOptions
 	codec ClientCodec
 
 	reqMutex sync.Mutex // protects following
@@ -271,14 +305,49 @@ func DialHTTPPath(network, address, path string) (*Client, error) {
 }
 
 // Dial connects to an RPC server at the specified network address.
-func Dial(network, address string) (*Client, error) {
-	conn, err := net.Dial(network, address)
-	if err != nil {
-		return nil, err
-	}
-	return NewClient(conn), nil
+func Dial(network, address string,opts ...ClientOption) (*Client, error) {
+	return DialContext(context.Background(),network,address, opts...)
 }
 
+func DialContext(ctx context.Context,network , address string,opts ...ClientOption) (c *Client,err error){
+	c = &Client{
+		opts:defaultClientOptions(),
+	}
+
+	c.ctx, c.cancel = context.WithCancel(context.Background())
+	for _ ,opt  := range opts {
+		opt.apply(&c.opts)
+	}
+
+	if c.opts.timeout >0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.dopts.timeout)
+		defer cancel()
+	}
+	defer func() {
+		select {
+		case <-ctx.Done():
+			c, err = nil, ctx.Err()
+		default:
+		}
+	}()
+
+	conn, err := net.Dial(network, address)
+
+
+	encBuf := bufio.NewWriter(conn)
+	codec := &gobClientCodec{conn, gob.NewDecoder(conn), gob.NewEncoder(encBuf), encBuf}
+
+	c.setClientCodec(codec)
+	go c.input()
+
+	return c, err
+}
+
+func (client *Client)setClientCodec(codec ClientCodec)  {
+	client.codec = codec
+	client.pending = make(map[uint64]*Call)
+}
 // Close calls the underlying codec's Close method. If the connection is already
 // shutting down, ErrShutdown is returned.
 func (client *Client) Close() error {
