@@ -1,7 +1,7 @@
 # rpc
-简单教学 rpc 框架
+some implements when I study about rpc
 
-可以查看分支，查看 RPC 的多种实现
+several branch for different realization.
 
 # Contribute
-更多的实现提交 PR
+more realization when you study could PR
